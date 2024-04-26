@@ -14,7 +14,7 @@ struct Datetime {
 	int weekday;  //星期几
 	int startTime;  //开始时间
 	int endTime;  //结束时间
-
+	
 	bool operator==(const Datetime& datetime) {
 		return year == datetime.year && month == datetime.month && day == datetime.day &&
 			startTime == datetime.startTime && endTime == datetime.endTime;
@@ -29,10 +29,34 @@ struct Datetime {
 		return *this;
 	}
 
+	// 根据日期计算星期几
+	int getWeekdayByDate() {
+		int y = year, m = month, d = day;
+		if (m <= 2) {
+			m += 12;
+			y -= 1;
+		}
+		weekday = (d + 2 * m + 3 * (m + 1) / 5 + y + y / 4 - y / 100 + y / 400) % 7 + 1;
+		return weekday;
+	}
+
+	// 解析字符串获得日期时间
+	void parseDatetime(const string& dateStr, const string& timeStr) {
+		// dateStr: 2016-06-02
+		// timeStr: 20:00~22:00
+		year = stoi(dateStr.substr(0, 4));
+		month = stoi(dateStr.substr(5, 2));
+		day = stoi(dateStr.substr(8));
+		getWeekdayByDate();
+
+		startTime = stoi(timeStr.substr(0, 2));
+		endTime = stoi(timeStr.substr(6, 2));
+	}
+
 	// 判断两个时间区间是否有交集
 	bool haveIntersection(const Datetime& datetime) {
 		if (year == datetime.year && month == datetime.month && day == datetime.day) {
-			return startTime < datetime.endTime&& endTime > datetime.startTime;
+			return startTime < datetime.endTime && endTime > datetime.startTime;
 		}
 		return false;
 	}
@@ -72,20 +96,60 @@ struct Order {
 	string userID; // 用户ID
 	Datetime date; // 订单时间
 	string place; //场地
-	double price;  //订单收入
+	double price = 0;  //订单收入
 	bool isCancelled = false; //是否已取消
 
 	bool operator==(const Order& order) {
 		return userID == order.userID && date == order.date && place == order.place && isCancelled == order.isCancelled;
 	}
+	// 验证订单时间参数是否有效
+	bool checkTimeValid() {
+		if (date.startTime < 9 || date.startTime > 22) return false;
+		if (date.endTime < 9 || date.endTime > 22) return false;
+		if (date.startTime >= date.endTime) return false;
+		return true;
+	}
+
+	// 计算订单价格
+	void getPrice() {
+		int weekday = date.weekday;
+		int startTime = date.startTime;
+		int endTime = date.endTime;
+		if (weekday >= 1 && weekday <= 5) {
+			for (int i = startTime; i < endTime; ++i) {
+				if (i >= 9 && i < 12) price += 30;
+				else if (i >= 12 && i < 18) price += 50;
+				else if (i >= 18 && i < 20) price += 80;
+				else price += 60;
+			}
+		}
+		else {
+			for (int i = startTime; i < endTime; ++i) {
+				if (i >= 9 && i < 12) price += 40;
+				else if (i >= 12 && i < 18) price += 50;
+				else price += 60;
+			}
+		}
+	}
+
+	// 解析输入获得订单信息
+	void parseInput(const string& input) {
+		istringstream iss(input);
+		string userIDStr, dateStr, timeStr, placeStr;
+		iss >> userIDStr >> dateStr >> timeStr >> placeStr;
+		userID = userIDStr;
+		date.parseDatetime(dateStr, timeStr);
+		place = placeStr;
+
+	}
 };
 // 链表节点：用于存储订单记录
 struct Node {
-	Order* order; // 指向订单记录
-	Node* next;  // 指向下一个节点
+	Order *order; // 指向订单记录
+	Node *next;  // 指向下一个节点
 
-	Node() :order(nullptr), next(nullptr) {}
-	Node(const Order& _order) :order(new Order()), next(nullptr) {
+	Node():order(nullptr), next(nullptr){}
+	Node(const Order& _order):order(new Order()), next(nullptr){
 		order->userID = _order.userID;
 		order->date = _order.date;
 		order->place = _order.place;
@@ -99,7 +163,7 @@ struct Node {
 // 链表类：用以按时间排序预定记录
 class LinkedList {
 public:
-	LinkedList() :head(new Node()) {}
+	LinkedList():head(new Node()){}
 	~LinkedList() {
 		Node* cur = head;
 		while (cur != nullptr) {
@@ -110,7 +174,7 @@ public:
 		head = nullptr;
 	}
 	// 判断新增订单是否和原订单冲突
-	bool isConflict(const Order& order) {
+	bool isConflict(const Order &order) {
 		Node* cur = head->next;
 		while (cur != nullptr) {
 			if (!cur->order->isCancelled && cur->order->date.haveIntersection(order.date)) {
@@ -157,17 +221,17 @@ public:
 		for (Node* cur = head->next; cur != nullptr; cur = cur->next) {
 			price += cur->order->price;
 			cout << cur->order->date.year
-				<< "-" << setw(2) << setfill('0') << cur->order->date.month
+				<< "-" << setw(2) << setfill('0') << cur->order->date.month 
 				<< "-" << setw(2) << setfill('0') << cur->order->date.day
-				<< " " << setw(2) << setfill('0') << cur->order->date.startTime
-				<< ":00~" << setw(2) << setfill('0') << cur->order->date.endTime
+				<< " " << setw(2) << setfill('0') << cur->order->date.startTime 
+				<< ":00~" << setw(2) << setfill('0')  << cur->order->date.endTime 
 				<< ":00 " << (cur->order->isCancelled ? "违约金 " : "") << cur->order->price << "元" << endl;
 		}
 		return price;
 	}
-
+	
 private:
-	Node* head;  // 链表头节点
+	Node *head;  // 链表头节点
 };
 
 // 根据场地映射链表
@@ -188,81 +252,15 @@ int isValidFormat(const string& input) {
 		return 0;
 	}
 }
-// 根据日期计算星期几
-int getWeekdayByDate(int y, int m, int d) {
-	if (m <= 2) {
-		m += 12;
-		y -= 1;
-	}
-	return (d + 2 * m + 3 * (m + 1) / 5 + y + y / 4 - y / 100 + y / 400) % 7 + 1;
-}
-// 解析字符串获得日期时间
-void parseDatetime(const string& dateStr, const string& timeStr, Datetime& date) {
-	// dateStr: 2016-06-02
-	// timeStr: 20:00~22:00
-	date.year = stoi(dateStr.substr(0, 4));
-	date.month = stoi(dateStr.substr(5, 2));
-	date.day = stoi(dateStr.substr(8));
-	date.weekday = getWeekdayByDate(date.year, date.month, date.day);
 
-	date.startTime = stoi(timeStr.substr(0, 2));
-	date.endTime = stoi(timeStr.substr(6, 2));
-}
-// 解析输入获得订单信息
-void parseInput(const string& input, Order& order) {
-	istringstream iss(input);
-	string userID, date, time, place;
-	iss >> userID >> date >> time >> place;
-	order.userID = userID;
-	parseDatetime(date, time, order.date);
-	order.place = place;
 
-	/*
-	cout << order.userID << " " << order.date.year << " "
-		<< order.date.month << " " << order.date.day << " " << order.date.weekday
-		<< " " << order.date.startTime << " " << order.date.endTime
-		<< " " << place << endl;
-	*/
-}
-// 验证订单时间参数是否有效
-bool checkTimeValid(const Order& order) {
-	int startTime = order.date.startTime;
-	int endTime = order.date.endTime;
-	if (startTime < 9 || startTime > 22) return false;
-	if (endTime < 9 || endTime > 22) return false;
-	if (startTime >= endTime) return false;
-	return true;
-}
-// 计算订单价格
-void getPrice(Order& order) {
-	int weekday = order.date.weekday;
-	int startTime = order.date.startTime;
-	int endTime = order.date.endTime;
-	double price = 0;
-	if (weekday >= 1 && weekday <= 5) {
-		for (int i = startTime; i < endTime; ++i) {
-			if (i >= 9 && i < 12) price += 30;
-			else if (i >= 12 && i < 18) price += 50;
-			else if (i >= 18 && i < 20) price += 80;
-			else price += 60;
-		}
-	}
-	else {
-		for (int i = startTime; i < endTime; ++i) {
-			if (i >= 9 && i < 12) price += 40;
-			else if (i >= 12 && i < 18) price += 50;
-			else price += 60;
-		}
-	}
-	order.price = price;
-}
 // 处理预定记录操作
 void booking(LinkedList* orderList, Order& order) {
 	if (orderList->isConflict(order)) {
 		cout << "Error: the booking conflicts with existing bookings!" << endl;
 		return;
 	}
-	getPrice(order);
+	order.getPrice();
 	Node* node = new Node(order);
 	orderList->addNode(node);
 	cout << "Success: the booking is accepted!" << endl;
@@ -281,13 +279,13 @@ void dealInput(const string& input) {
 	// 格式为{用户ID} {预订日期 yyyy-MM-dd} {预订时间段 HH:mm~HH:mm} {场地} {取消标记}
 	// 如U123 2016-06-02 20:00~22:00 A C
 	int flag = isValidFormat(input);
-	if (flag == 0) {
+	if (flag == 0) { //输入格式错误
 		cout << "Error: the booking is invalid!" << endl;
 		return;
 	}
 	Order order;
-	parseInput(input, order);
-	if (!checkTimeValid(order)) {
+	order.parseInput(input);
+	if (!order.checkTimeValid()) { // 预约时间参数错误
 		cout << "Error: the booking is invalid!" << endl;
 		return;
 	}
@@ -348,6 +346,13 @@ int main() {
 /*
 case 1:
 abcdefghijklmnopqrst1234567890
+U001 2016-06-02 22:00~22:00 A
+U002 2017-08-01 19:00~22:00 A
+U003 2017-08-02 13:00~17:00 B
+U004 2017-08-03 15:00~16:00 C
+U005 2017-08-05 09:00~11:00 D
+
+abcdefghijklmnopqrst1234567890
 > Error: the booking is invalid!
 U001 2016-06-02 22:00~22:00 A
 > Error: the booking is invalid!
@@ -381,6 +386,13 @@ U005 2017-08-05 09:00~11:00 D
 > 总计：530元
 
 case 2:
+U002 2017-08-01 19:00~22:00 A
+U003 2017-08-01 18:00~20:00 A
+U002 2017-08-01 19:00~22:00 A C
+U002 2017-08-01 19:00~22:00 A C
+U003 2017-08-01 18:00~20:00 A
+U003 2017-08-02 13:00~17:00 B
+
 U002 2017-08-01 19:00~22:00 A
 > Success: the booking is accepted!
 U003 2017-08-01 18:00~20:00 A
