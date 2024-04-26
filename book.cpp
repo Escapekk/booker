@@ -7,14 +7,10 @@
 using namespace std;
 
 // 时间类
-struct Datetime {
-	int year;  //年
-	int month;  //月
-	int day;  //日
-	int weekday;  //星期几
-	int startTime;  //开始时间
-	int endTime;  //结束时间
-	
+class Datetime {
+	friend class Order;
+
+public:
 	bool operator==(const Datetime& datetime) {
 		return year == datetime.year && month == datetime.month && day == datetime.day &&
 			startTime == datetime.startTime && endTime == datetime.endTime;
@@ -27,17 +23,6 @@ struct Datetime {
 		startTime = datetime.startTime;
 		endTime = datetime.endTime;
 		return *this;
-	}
-
-	// 根据日期计算星期几
-	int getWeekdayByDate() {
-		int y = year, m = month, d = day;
-		if (m <= 2) {
-			m += 12;
-			y -= 1;
-		}
-		weekday = (d + 2 * m + 3 * (m + 1) / 5 + y + y / 4 - y / 100 + y / 400) % 7 + 1;
-		return weekday;
 	}
 
 	// 解析字符串获得日期时间
@@ -89,18 +74,42 @@ struct Datetime {
 			}
 		}
 	}
+private:
+	int year;  //年
+	int month;  //月
+	int day;  //日
+	int weekday;  //星期几
+	int startTime;  //开始时间
+	int endTime;  //结束时间
+
+	// 根据日期计算星期几
+	int getWeekdayByDate() {
+		int y = year, m = month, d = day;
+		if (m <= 2) {
+			m += 12;
+			y -= 1;
+		}
+		weekday = (d + 2 * m + 3 * (m + 1) / 5 + y + y / 4 - y / 100 + y / 400) % 7 + 1;
+		return weekday;
+	}
 };
 
 // 订单类
-struct Order {
-	string userID; // 用户ID
-	Datetime date; // 订单时间
-	string place; //场地
-	double price = 0;  //订单收入
-	bool isCancelled = false; //是否已取消
-
+class Order {
+public:
+	Order() {}
+	Order(const Order& order) {
+		userID = order.userID;
+		date = order.date;
+		place = order.place;
+		price = order.price;
+		isCancelled = order.isCancelled;
+	}
 	bool operator==(const Order& order) {
 		return userID == order.userID && date == order.date && place == order.place && isCancelled == order.isCancelled;
+	}
+	string& getPlace() {
+		return place;
 	}
 	// 验证订单时间参数是否有效
 	bool checkTimeValid() {
@@ -140,8 +149,46 @@ struct Order {
 		userID = userIDStr;
 		date.parseDatetime(dateStr, timeStr);
 		place = placeStr;
-
 	}
+
+	// 取消订单并计算违约金
+	void updateOrder() {
+		isCancelled = true;
+		if (date.weekday >= 1 && date.weekday <= 5) {
+			price *= 0.5;
+		}
+		else {
+			price *= 0.25;
+		}
+	}
+	// 打印订单信息
+	double printOrder() {
+		cout << setw(4) << setfill('0') << date.year
+			<< "-" << setw(2) << setfill('0') << date.month
+			<< "-" << setw(2) << setfill('0') << date.day
+			<< " " << setw(2) << setfill('0') << date.startTime
+			<< ":00~" << setw(2) << setfill('0') << date.endTime
+			<< ":00 " << (isCancelled ? "违约金 " : "") << price << "元" << endl;
+		return price;
+	}
+	// 判断两个订单时间是否冲突
+	bool isConflict(const Order& order) {
+		return date.haveIntersection(order.date);
+	}
+	// 判断两个订单起始时间大小
+	bool isLater(const Order& order) {
+		return date.isLater(order.date);
+	}
+	// 判断订单是否取消
+	bool checkCancelled() {
+		return isCancelled;
+	}
+private:
+	string userID; // 用户ID
+	Datetime date; // 订单时间
+	string place; //场地
+	double price = 0;  //订单收入
+	bool isCancelled = false; //是否已取消
 };
 // 链表节点：用于存储订单记录
 struct Node {
@@ -149,12 +196,7 @@ struct Node {
 	Node *next;  // 指向下一个节点
 
 	Node():order(nullptr), next(nullptr){}
-	Node(const Order& _order):order(new Order()), next(nullptr){
-		order->userID = _order.userID;
-		order->date = _order.date;
-		order->place = _order.place;
-		order->price = _order.price;
-	}
+	Node(const Order& _order):order(new Order(_order)), next(nullptr){}
 	~Node() {
 		delete order;
 	}
@@ -173,11 +215,11 @@ public:
 		}
 		head = nullptr;
 	}
-	// 判断新增订单是否和原订单冲突
+	// 判断是否可以新增订单
 	bool isConflict(const Order &order) {
 		Node* cur = head->next;
 		while (cur != nullptr) {
-			if (!cur->order->isCancelled && cur->order->date.haveIntersection(order.date)) {
+			if (!cur->order->checkCancelled() && cur->order->isConflict(order)) {
 				return true;
 			}
 			cur = cur->next;
@@ -189,7 +231,7 @@ public:
 		Node* cur = head;
 		while (cur != nullptr) {
 			Node* next = cur->next;
-			if (next == nullptr || next->order->date.isLater(node->order->date)) {
+			if (next == nullptr || next->order->isLater(*node->order)) {
 				node->next = next;
 				cur->next = node;
 				break;
@@ -202,30 +244,18 @@ public:
 		Node* cur = head->next;
 		while (cur != nullptr) {
 			if (*cur->order == order) {
-				cur->order->isCancelled = true;
-				if (order.date.weekday >= 1 && order.date.weekday <= 5) {
-					cur->order->price *= 0.5;  //计算违约金
-				}
-				else {
-					cur->order->price *= 0.25;
-				}
+				cur->order->updateOrder();
 				return true;
 			}
 			cur = cur->next;
 		}
 		return false;
 	}
-	// 输出链表节点信息
+	// 输出链表节点信息,并返回收入
 	double printNode() {
 		double price = 0;
 		for (Node* cur = head->next; cur != nullptr; cur = cur->next) {
-			price += cur->order->price;
-			cout << cur->order->date.year
-				<< "-" << setw(2) << setfill('0') << cur->order->date.month 
-				<< "-" << setw(2) << setfill('0') << cur->order->date.day
-				<< " " << setw(2) << setfill('0') << cur->order->date.startTime 
-				<< ":00~" << setw(2) << setfill('0')  << cur->order->date.endTime 
-				<< ":00 " << (cur->order->isCancelled ? "违约金 " : "") << cur->order->price << "元" << endl;
+			price += cur->order->printOrder();
 		}
 		return price;
 	}
@@ -290,10 +320,10 @@ void dealInput(const string& input) {
 		return;
 	}
 	if (flag == 1) {
-		booking(placeMap[order.place], order);
+		booking(placeMap[order.getPlace()], order);
 	}
 	else {
-		cancelBooking(placeMap[order.place], order);
+		cancelBooking(placeMap[order.getPlace()], order);
 	}
 }
 
